@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests with coverage
+        run: |
+          mkdir -p build/coverage
+          go test ./... -race -covermode=atomic -coverprofile=build/coverage/coverage.out
+
+      - name: Generate coverage summary
+        run: |
+          go tool cover -func=build/coverage/coverage.out -o build/coverage/coverage.txt
+          {
+            echo "Go coverage summary"
+            echo
+            echo '```'
+            cat build/coverage/coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: build/coverage/
+          if-no-files-found: error
