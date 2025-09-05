@@ -61,7 +61,7 @@ const (
 	Off   PoeMode = 0
 	Auto          = 1
 	On            = 2
-	Calib         = 2
+	Calib         = 3
 )
 
 type PoeStatus int

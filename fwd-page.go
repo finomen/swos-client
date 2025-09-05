@@ -116,19 +116,23 @@ type fwdChange struct {
 	Vlnh []int
 }
 
+type PortForward struct {
+	PortLock      bool
+	LockOnFirst   bool
+	MirrorIngress bool
+	MirrorEgress  bool
+	ForwardTable  []bool
+	VlanMode      VlanMode
+	ForceVlanId   bool
+	VlanHeader    VlanHeader
+	DefaultVlanId int
+	VlanReceive   VlanReceive
+	EgressRate    int
+}
+
 type FwdPage struct {
-	PortLock      []bool
-	LockOnFirst   []bool
-	MirrorIngress []bool
-	MirrorEgress  []bool
-	MirrorTo      int
-	ForwardTable  [][]bool
-	VlanMode      []VlanMode
-	ForceVlanId   []bool
-	VlanHeader    []VlanHeader
-	DefaultVlanId []int
-	VlanReceive   []VlanReceive
-	EgressRate    []int
+	PortForward []PortForward
+	MirrorTo    int
 
 	numPorts int
 }
@@ -139,85 +143,101 @@ func (f *FwdPage) url() string {
 
 func (f *FwdPage) load(in fwdStatus) error {
 	var err error
-	f.PortLock, err = bitMaskToArray(in.Lck, f.numPorts)
+
+	f.PortForward = make([]PortForward, f.numPorts)
+
+	portLock, err := bitMaskToArray(in.Lck, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.LockOnFirst, err = bitMaskToArray(in.Lckf, f.numPorts)
+
+	lockOnFirst, err := bitMaskToArray(in.Lckf, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.MirrorIngress, err = bitMaskToArray(in.Imr, f.numPorts)
+
+	mirrorIngress, err := bitMaskToArray(in.Imr, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.MirrorEgress, err = bitMaskToArray(in.Omr, f.numPorts)
+
+	mirrorEgress, err := bitMaskToArray(in.Omr, f.numPorts)
 	if err != nil {
 		return err
 	}
+
+	forceVlanId, err := bitMaskToArray(in.Fvid, f.numPorts)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < f.numPorts; i++ {
+		f.PortForward[i].PortLock = portLock[i]
+		f.PortForward[i].LockOnFirst = lockOnFirst[i]
+		f.PortForward[i].MirrorIngress = mirrorIngress[i]
+		f.PortForward[i].MirrorEgress = mirrorEgress[i]
+		f.PortForward[i].ForceVlanId = forceVlanId[i]
+	}
+
 	f.MirrorTo, err = parseInt(in.Mrto)
 	if err != nil {
 		return err
 	}
-	f.ForwardTable = make([][]bool, f.numPorts)
-	f.ForwardTable[0], err = bitMaskToArray(in.Fp1, f.numPorts)
+
+	f.PortForward[0].ForwardTable, err = bitMaskToArray(in.Fp1, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.ForwardTable[1], err = bitMaskToArray(in.Fp2, f.numPorts)
+	f.PortForward[1].ForwardTable, err = bitMaskToArray(in.Fp2, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.ForwardTable[2], err = bitMaskToArray(in.Fp3, f.numPorts)
+	f.PortForward[2].ForwardTable, err = bitMaskToArray(in.Fp3, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.ForwardTable[3], err = bitMaskToArray(in.Fp4, f.numPorts)
+	f.PortForward[3].ForwardTable, err = bitMaskToArray(in.Fp4, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.ForwardTable[4], err = bitMaskToArray(in.Fp5, f.numPorts)
+	f.PortForward[4].ForwardTable, err = bitMaskToArray(in.Fp5, f.numPorts)
 	if err != nil {
 		return err
 	}
-	f.ForwardTable[5], err = bitMaskToArray(in.Fp6, f.numPorts)
+	f.PortForward[5].ForwardTable, err = bitMaskToArray(in.Fp6, f.numPorts)
 	if err != nil {
 		return err
 	}
 	if len(in.Vlan) != f.numPorts {
 		return fmt.Errorf("invalid vlan count")
 	}
-	f.VlanMode = make([]VlanMode, f.numPorts)
+
 	for i := 0; i < f.numPorts; i++ {
 		vm, err := parseInt(in.Vlan[i])
 		if err != nil {
 			return err
 		}
-		f.VlanMode[i] = VlanMode(vm)
-	}
-	f.ForceVlanId, err = bitMaskToArray(in.Fvid, f.numPorts)
-	if err != nil {
-		return err
+		f.PortForward[i].VlanMode = VlanMode(vm)
 	}
 
 	if len(in.Vlnh) != f.numPorts {
 		return fmt.Errorf("invalid vlan header count")
 	}
-	f.VlanHeader = make([]VlanHeader, f.numPorts)
+
 	for i := 0; i < f.numPorts; i++ {
 		vh, err := parseInt(in.Vlnh[i])
 		if err != nil {
 			return err
 		}
-		f.VlanHeader[i] = VlanHeader(vh)
+		f.PortForward[i].VlanHeader = VlanHeader(vh)
 	}
 
 	if len(in.Dvid) != f.numPorts {
 		return fmt.Errorf("invalid vlan id count")
 	}
-	f.DefaultVlanId = make([]int, f.numPorts)
+
 	for i := 0; i < f.numPorts; i++ {
-		f.DefaultVlanId[i], err = parseInt(in.Dvid[i])
+		f.PortForward[i].DefaultVlanId, err = parseInt(in.Dvid[i])
 		if err != nil {
 			return err
 		}
@@ -226,21 +246,21 @@ func (f *FwdPage) load(in fwdStatus) error {
 	if len(in.Vlni) != f.numPorts {
 		return fmt.Errorf("invalid vlan in count")
 	}
-	f.VlanReceive = make([]VlanReceive, f.numPorts)
+
 	for i := 0; i < f.numPorts; i++ {
 		vr, err := parseInt(in.Vlni[i])
 		if err != nil {
 			return err
 		}
-		f.VlanReceive[i] = VlanReceive(vr)
+		f.PortForward[i].VlanReceive = VlanReceive(vr)
 	}
 
 	if len(in.Or) != f.numPorts {
 		return fmt.Errorf("invalid or count")
 	}
-	f.EgressRate = make([]int, f.numPorts)
+
 	for i := 0; i < f.numPorts; i++ {
-		f.EgressRate[i], err = parseInt(in.Or[i])
+		f.PortForward[i].EgressRate, err = parseInt(in.Or[i])
 		if err != nil {
 			return err
 		}
@@ -252,28 +272,43 @@ func (f *FwdPage) store() fwdChange {
 	vlanMode := make([]int, f.numPorts)
 	vlanReceive := make([]int, f.numPorts)
 	vlanHeader := make([]int, f.numPorts)
+	portLock := make([]bool, f.numPorts)
+	lockOnFirst := make([]bool, f.numPorts)
+	mirrorIngress := make([]bool, f.numPorts)
+	mirrorEgress := make([]bool, f.numPorts)
+	forceVlanId := make([]bool, f.numPorts)
+	defaultVlanId := make([]int, f.numPorts)
+	egressRate := make([]int, f.numPorts)
+
 	for i := 0; i < f.numPorts; i++ {
-		vlanMode[i] = int(f.VlanMode[i])
-		vlanReceive[i] = int(f.VlanReceive[i])
-		vlanHeader[i] = int(f.VlanHeader[i])
+		vlanMode[i] = int(f.PortForward[i].VlanMode)
+		vlanReceive[i] = int(f.PortForward[i].VlanReceive)
+		vlanHeader[i] = int(f.PortForward[i].VlanHeader)
+		portLock[i] = f.PortForward[i].PortLock
+		lockOnFirst[i] = f.PortForward[i].LockOnFirst
+		mirrorIngress[i] = f.PortForward[i].MirrorIngress
+		mirrorEgress[i] = f.PortForward[i].MirrorEgress
+		forceVlanId[i] = f.PortForward[i].ForceVlanId
+		defaultVlanId[i] = f.PortForward[i].DefaultVlanId
+		egressRate[i] = f.PortForward[i].EgressRate
 	}
 	return fwdChange{
-		Fp1:  arrayToBitMask(f.ForwardTable[0]),
-		Fp2:  arrayToBitMask(f.ForwardTable[1]),
-		Fp3:  arrayToBitMask(f.ForwardTable[2]),
-		Fp4:  arrayToBitMask(f.ForwardTable[3]),
-		Fp5:  arrayToBitMask(f.ForwardTable[4]),
-		Fp6:  arrayToBitMask(f.ForwardTable[5]),
-		Lck:  arrayToBitMask(f.PortLock),
-		Lckf: arrayToBitMask(f.LockOnFirst),
-		Imr:  arrayToBitMask(f.MirrorIngress),
-		Omr:  arrayToBitMask(f.MirrorEgress),
+		Fp1:  arrayToBitMask(f.PortForward[0].ForwardTable),
+		Fp2:  arrayToBitMask(f.PortForward[1].ForwardTable),
+		Fp3:  arrayToBitMask(f.PortForward[2].ForwardTable),
+		Fp4:  arrayToBitMask(f.PortForward[3].ForwardTable),
+		Fp5:  arrayToBitMask(f.PortForward[4].ForwardTable),
+		Fp6:  arrayToBitMask(f.PortForward[5].ForwardTable),
+		Lck:  arrayToBitMask(portLock),
+		Lckf: arrayToBitMask(lockOnFirst),
+		Imr:  arrayToBitMask(mirrorIngress),
+		Omr:  arrayToBitMask(mirrorEgress),
 		Mrto: f.MirrorTo,
-		Or:   f.EgressRate,
+		Or:   egressRate,
 		Vlan: vlanMode,
 		Vlni: vlanReceive,
-		Dvid: f.DefaultVlanId,
-		Fvid: arrayToBitMask(f.ForceVlanId),
+		Dvid: defaultVlanId,
+		Fvid: arrayToBitMask(forceVlanId),
 		Vlnh: vlanHeader,
 	}
 }
